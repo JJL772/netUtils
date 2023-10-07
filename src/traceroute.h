@@ -18,7 +18,7 @@ enum TracerouteLog {
 };
 
 struct traceroute_opts {
-	sockaddr_in ip;
+	struct sockaddr_in ip;
 	int max_hops;		/* Max number of hops */
 	int log_type;
 };
@@ -34,13 +34,13 @@ struct traceroute_result {
 	struct traceroute_node* first;
 };
 
-void traceroute_opts_set_default(traceroute_opts* opts);
+void traceroute_opts_set_default(struct traceroute_opts* opts);
 
 void traceroute_cmd(int argc, char** argv);
 
-bool traceroute(const traceroute_opts* opts, traceroute_result** result);
+bool traceroute(const struct traceroute_opts* opts, struct traceroute_result** result);
 
-void traceresult_free(traceroute_result* result);
+void traceresult_free(struct traceroute_result* result);
 
 #ifdef __cplusplus
 }

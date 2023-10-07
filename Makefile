@@ -1,8 +1,9 @@
 
-ARCH?=$(shell uname -m)
+ARCH?=$(shell uname -s | tr A-Z a-z)-$(shell uname -m)
 OUT=bin/$(ARCH)
 CXXFLAGS:=$(CXXFLAGS) $(CFLAGS) -DINCLUDE_MAIN=1
 PREFIX?=/usr/local
+LDFLAGS+=-lm
 
 all: $(OUT)/ping $(OUT)/traceroute
 
@@ -11,11 +12,11 @@ bin/$(ARCH):
 
 $(OUT)/traceroute: src/traceroute.c src/getopt_s.c
 	mkdir -p $(OUT)
-	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(OUT)/ping: src/ping.c src/getopt_s.c
 	mkdir -p $(OUT)
-	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
 
 install:
 	mkdir -p $(PREFIX)/include/netutils

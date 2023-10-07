@@ -14,12 +14,14 @@
 #include <netinet/ip_icmp.h>
 
 #include <memory.h>
-#include <cassert>
+#include <assert.h>
 #include <errno.h>
 #include <limits.h>
 #include <stdint.h>
-#include <cmath>
+#include <math.h>
 #include <stdio.h>
+#include <stdbool.h>
+#include <stdlib.h>
 
 #include "iputils.h"
 #include "getopt_s.h"
@@ -47,7 +49,7 @@
 
 struct ping_ctx {
 	int fd;
-	sockaddr_in addr;
+	struct sockaddr_in addr;
 };
 
 struct __attribute__((packed)) ping_packet {
@@ -57,9 +59,9 @@ struct __attribute__((packed)) ping_packet {
     char payload[PING_PAYLOAD_SIZE];
 };
 
-static bool _icmp_validate(ping_packet& packet);
+static bool _icmp_validate(struct ping_packet* packet);
 static void _generate_payload(void* payload, size_t size);
-static void _generate_packet(ping_packet& packet, uint16_t seq, uint16_t ident);
+static void _generate_packet(struct ping_packet* packet, uint16_t seq, uint16_t ident);
 
 #ifdef EPICS
 
@@ -78,21 +80,21 @@ static void register_icmp() {
 epicsExportRegistrar(register_icmp);
 
 static void ping(const iocshArgBuf* args) {
-	icmp_ping(args->aval.ac, args->aval.av);
+	icmp_ping_cmd(args->aval.ac, args->aval.av);
 }
 
 #endif
 
 
-static timeval sec_to_tv(double ms) {
+static struct timeval sec_to_tv(double ms) {
 	double us = fmod(ms, 1000) * 1e3f;
-	timeval tv;
+	struct timeval tv;
 	tv.tv_sec = round(ms / 1000.f);
 	tv.tv_usec = us;
 	return tv;
 }
 
-static bool _ping_open(const char* addr, const ping_opts* opts, ping_ctx* p) {
+static bool _ping_open(const char* addr, const struct ping_opts* opts, struct ping_ctx* p) {
 #ifdef USE_RAW_SOCK
     p->fd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
 #else
@@ -112,7 +114,7 @@ static bool _ping_open(const char* addr, const ping_opts* opts, ping_ctx* p) {
     p->addr.sin_port = 5555;
     p->addr.sin_addr.s_addr = inet_addr(addr);
 
-	timeval tv = sec_to_tv(opts->read_timeout);
+	struct timeval tv = sec_to_tv(opts->read_timeout);
 	if (setsockopt(p->fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
 		perror("Failed to set SO_RCVTIMEO");
 		close(p->fd);
@@ -143,7 +145,7 @@ static inline uint16_t _cksum(const void* hdr, size_t size) {
     return ~r;
 }
 
-void icmp_ping_defaults(ping_opts* opts) {
+void icmp_ping_defaults(struct ping_opts* opts) {
 	memset(opts, 0, sizeof(*opts));
 	opts->num_packets = 5;
 	opts->interval = 1;
@@ -153,7 +155,7 @@ void icmp_ping_defaults(ping_opts* opts) {
 }
 
 bool icmp_ping_cmd(int argc, char** argv) {
-	ping_opts opts;
+	struct ping_opts opts;
 	icmp_ping_defaults(&opts);
 	
     int opt;
@@ -191,15 +193,15 @@ bool icmp_ping_cmd(int argc, char** argv) {
 
     opts.addr = argv[st.optind];
 
-	ping_stats stats;
+	struct ping_stats stats;
 	return icmp_ping(&opts, &stats);
 }
 
-bool icmp_ping(const ping_opts* opts, ping_stats* stats) {
+bool icmp_ping(const struct ping_opts* opts, struct ping_stats* stats) {
 
 	memset(stats, 0, sizeof(*stats));
 
-    ping_ctx ctx;
+    struct ping_ctx ctx;
     if (!_ping_open(opts->addr, opts, &ctx))
         return false;
 
@@ -211,28 +213,28 @@ bool icmp_ping(const ping_opts* opts, ping_stats* stats) {
 
     uint64_t seq;
     for (seq = 0; seq < opts->num_packets; ++seq) {
-        ping_packet msg;
-        _generate_packet(msg, seq, ident);
+        struct ping_packet msg;
+        _generate_packet(&msg, seq, ident);
 
-        if (sendto(ctx.fd, &msg, sizeof(msg), 0, (sockaddr*)&ctx.addr, sizeof(ctx.addr)) < 0) {
+        if (sendto(ctx.fd, &msg, sizeof(msg), 0, (struct sockaddr*)&ctx.addr, sizeof(ctx.addr)) < 0) {
             if (!quiet)
                 perror("failed");
         }
         stats->lost++;
 
-        timespec now = time_now();
+        struct timespec now = time_now();
 
         // Recv some ICMP packets, accounting for some out of order delivery
         for (int rp = 0; rp < 10; ++rp) {
-            sockaddr_in fromaddr;
+            struct sockaddr_in fromaddr;
             socklen_t fromsize = sizeof(fromaddr);
             ssize_t ret;
 
             // Recv logic is a bit more convoluted when using SOCK_RAW. We recv a full IP frame instead of just the payload
             char data[4096];
-            ip* ipf = (ip*)data;
+            struct ip* ipf = (struct ip*)data;
 
-            if ((ret = recvfrom(ctx.fd, data, sizeof(data), MSG_DONTWAIT, (sockaddr*)&fromaddr, &fromsize)) < ssize_t(sizeof(ping_packet))) {
+            if ((ret = recvfrom(ctx.fd, data, sizeof(data), MSG_DONTWAIT, (struct sockaddr*)&fromaddr, &fromsize)) < (ssize_t)(sizeof(struct ping_packet))) {
                 // No more data left, bail out!
                 if (errno == EAGAIN || errno == EWOULDBLOCK)
                     break;
@@ -241,11 +243,11 @@ bool icmp_ping(const ping_opts* opts, ping_stats* stats) {
                 continue;
             }
 
-            ping_packet* rmsg = 
+            struct ping_packet* rmsg = 
         #if USE_RAW_SOCK
                 (ping_packet*)(data + (ipf->ip_hl * 4)); /* hl = number of 32-bit words in header */
         #else
-                (ping_packet*)data;
+                (struct ping_packet*)data;
         #endif
 
             // Filter out any non-echo requests, or messages we don't own
@@ -253,14 +255,14 @@ bool icmp_ping(const ping_opts* opts, ping_stats* stats) {
                 continue;
 
             // Validate ICMP packet
-            if (!_icmp_validate(*rmsg)) {
+            if (!_icmp_validate(rmsg)) {
                 if (!silent)
                     printf("malformed ICMP packet with SEQ %d!\n", rmsg->icmp.icmp_hun.ih_idseq.icd_seq);
                 ++stats->corrupted;
                 continue;
             }
 
-            timespec ts = {rmsg->sec, rmsg->nsec};
+            struct timespec ts = {rmsg->sec, rmsg->nsec};
             float diffms = time_diff(&now, &ts) * 1000.f;
             stats->avgTime = ((seq+1) * stats->avgTime + diffms) / (seq+2);
             stats->minTime = diffms < stats->minTime ? diffms : stats->minTime;
@@ -269,7 +271,7 @@ bool icmp_ping(const ping_opts* opts, ping_stats* stats) {
             if (!quiet)
                 printf("%ld bytes from %s: icmp_seq=%lu time=%.2f ms %s%s\n", 
                     (long int)(ret - ipf->ip_hl * 4), inet_ntoa(fromaddr.sin_addr), (long unsigned)seq, diffms,
-                    (lastseq != int(rmsg->icmp.icmp_hun.ih_idseq.icd_seq) - 1) ? "(OUT OF ORDER)" : "",
+                    (lastseq != (int)(rmsg->icmp.icmp_hun.ih_idseq.icd_seq) - 1) ? "(OUT OF ORDER)" : "",
                     stats->lost == 0 ? "(DUP)" : "");
 
             lastseq = rmsg->icmp.icmp_hun.ih_idseq.icd_seq;
@@ -289,21 +291,21 @@ bool icmp_ping(const ping_opts* opts, ping_stats* stats) {
     // Print stats
     if (!silent) {
         printf("%llu packets transmitted, %llu received, %lld corrupted, %.2f%% packet loss\n", (long long unsigned)seq, 
-            (long long unsigned)seq - stats->lost, (long long)stats->corrupted, (float(stats->corrupted) / float(seq)) * 100.f);
+            (long long unsigned)seq - stats->lost, (long long)stats->corrupted, ((float)(stats->corrupted) / (float)(seq)) * 100.f);
         printf("min=%.2f ms, max=%.2f ms, avg=%.2f ms\n", stats->minTime, stats->maxTime, stats->avgTime);
     }
     return stats->corrupted == 0 && stats->lost == 0;
 }
 
-static bool _icmp_validate(ping_packet& packet) {
-    int sum = packet.icmp.icmp_cksum;
-    packet.icmp.icmp_cksum = 0;
-    const uint16_t actualSum = _cksum(&packet, sizeof(packet));
-    packet.icmp.icmp_cksum = sum;
+static bool _icmp_validate(struct ping_packet* packet) {
+    int sum = packet->icmp.icmp_cksum;
+    packet->icmp.icmp_cksum = 0;
+    const uint16_t actualSum = _cksum(packet, sizeof(*packet));
+    packet->icmp.icmp_cksum = sum;
 
     if (sum != actualSum) {
         printf("validation failed for icmp_seq=%d: packet checksum=0x%X, computed checksum=0x%X\n",
-            packet.icmp.icmp_hun.ih_idseq.icd_seq, packet.icmp.icmp_cksum, sum);
+            packet->icmp.icmp_hun.ih_idseq.icd_seq, packet->icmp.icmp_cksum, sum);
     }
 
     return sum == actualSum;
@@ -315,20 +317,20 @@ static void _generate_payload(void* payload, size_t size) {
     memset(payload, pattern, size);
 }
 
-static void _generate_packet(ping_packet& msg, uint16_t seq, uint16_t ident) {
-    memset(&msg, 0, sizeof(msg));
-    msg.icmp.icmp_type = ICMP_ECHO;
-    msg.icmp.icmp_code = 0;
-    msg.icmp.icmp_hun.ih_idseq.icd_id = ident;
-    msg.icmp.icmp_hun.ih_idseq.icd_seq = seq;
-    _generate_payload(msg.payload, sizeof(msg.payload));
+static void _generate_packet(struct ping_packet* msg, uint16_t seq, uint16_t ident) {
+    memset(msg, 0, sizeof(*msg));
+    msg->icmp.icmp_type = ICMP_ECHO;
+    msg->icmp.icmp_code = 0;
+    msg->icmp.icmp_hun.ih_idseq.icd_id = ident;
+    msg->icmp.icmp_hun.ih_idseq.icd_seq = seq;
+    _generate_payload(msg->payload, sizeof(msg->payload));
 
-    timespec sentat = time_now();
+    struct timespec sentat = time_now();
 
-    msg.sec = sentat.tv_sec;
-    msg.nsec = sentat.tv_nsec;
+    msg->sec = sentat.tv_sec;
+    msg->nsec = sentat.tv_nsec;
 
-    msg.icmp.icmp_cksum = _cksum(&msg, sizeof(msg));
+    msg->icmp.icmp_cksum = _cksum(&msg, sizeof(*msg));
 }
 
 #ifdef INCLUDE_MAIN

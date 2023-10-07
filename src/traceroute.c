@@ -16,12 +16,14 @@
 #include "iputils.h"
 
 #include <memory.h>
-#include <cassert>
+#include <assert.h>
 #include <errno.h>
 #include <limits.h>
 #include <stdint.h>
-#include <cmath>
+#include <math.h>
 #include <stdio.h>
+#include <stdbool.h>
+#include <stdlib.h>
 
 #include "traceroute.h"
 #include "getopt_s.h"
@@ -32,19 +34,19 @@
 
 struct traceroute_ctx {
 	int fd;
-	sockaddr_in local;
+	struct sockaddr_in local;
 	uint16_t ident;
 };
 
 struct __attribute__((packed)) tr_packet {
-	icmp icmp_packet;
+	struct icmp icmp_packet;
 	uint32_t sec;
 	uint32_t nsec;
 };
 
-static bool _tr_open(const traceroute_opts* opts, traceroute_ctx* ctx);
-static void _tr_make_ip_frame(const traceroute_opts* opts, const traceroute_ctx* ctx, ip* ipf, uint8_t ttl, size_t datalen);
-static void _tr_make_icmp(const traceroute_ctx* ctx, tr_packet* packet);
+static bool _tr_open(const struct traceroute_opts* opts, struct traceroute_ctx* ctx);
+static void _tr_make_ip_frame(const struct traceroute_opts* opts, const struct traceroute_ctx* ctx, struct ip* ipf, uint8_t ttl, size_t datalen);
+static void _tr_make_icmp(const struct traceroute_ctx* ctx, struct tr_packet* packet);
 static void traceroute_help();
 
 #if EPICS
@@ -73,7 +75,7 @@ static void traceroute(const iocshArgBuf* args) {
 void traceroute_cmd(int argc, char** argv) {
 	getopt_state_t st;
 
-	traceroute_opts opts;
+	struct traceroute_opts opts;
 	traceroute_opts_set_default(&opts);
 
 	int opt;
@@ -99,7 +101,7 @@ void traceroute_cmd(int argc, char** argv) {
 	opts.ip.sin_port = 0;
 	opts.ip.sin_family = AF_INET;
 
-	traceroute_result* result = NULL;
+	struct traceroute_result* result = NULL;
 	traceroute(&opts, &result);
 	traceresult_free(result);
 }
@@ -108,36 +110,36 @@ static void traceroute_help() {
 	printf("Usage: traceroute [-n max_hops] addr\n");
 }
 
-void traceroute_opts_set_default(traceroute_opts* opts) {
+void traceroute_opts_set_default(struct traceroute_opts* opts) {
 	memset(opts, 0, sizeof(*opts));
 	opts->log_type = TR_LOG_FULL;
 	opts->max_hops = 128;
 }
 
-void traceresult_free(traceroute_result* result) {
+void traceresult_free(struct traceroute_result* result) {
 	if (!result)
 		return;
 
-	for (traceroute_node* n = result->first; n;) {
-		traceroute_node* o = n;
+	for (struct traceroute_node* n = result->first; n;) {
+		struct traceroute_node* o = n;
 		n = n->next;
 		free(o);
 	}
 	free(result);
 }
 
-bool traceroute(const traceroute_opts* opts, traceroute_result** resptr) {
-	traceroute_ctx ctx;
+bool traceroute(const struct traceroute_opts* opts, struct traceroute_result** resptr) {
+	struct traceroute_ctx ctx;
 	if (!_tr_open(opts, &ctx))
 		return false;
 
 	const bool quiet = opts->log_type < TR_LOG_FULL;
 	const bool verbose = opts->log_type == TR_LOG_VERBOSE;
 
-	traceroute_result* result = (traceroute_result*)calloc(1, sizeof(traceroute_result));
+	struct traceroute_result* result = (struct traceroute_result*)calloc(1, sizeof(struct traceroute_result));
 	result->first = NULL;
 	result->hops = 0;
-	traceroute_node* last = NULL;
+	struct traceroute_node* last = NULL;
 
 	int hops = opts->max_hops, retries = 10;
 	uint8_t ttl = 1;
@@ -151,13 +153,13 @@ bool traceroute(const traceroute_opts* opts, traceroute_result** resptr) {
 
 		/* Send the request */
 		char data[4096];
-		ssize_t len = sizeof(ip) + sizeof(icmp);
+		ssize_t len = sizeof(struct ip) + sizeof(struct icmp);
 
 		/* Build IP frame + ICMP payload */
-		_tr_make_ip_frame(opts, &ctx, (ip*)data, ttl, len);
-		_tr_make_icmp(&ctx, (tr_packet*)(data + sizeof(ip)));
+		_tr_make_ip_frame(opts, &ctx, (struct ip*)data, ttl, len);
+		_tr_make_icmp(&ctx, (struct tr_packet*)(data + sizeof(struct ip)));
 
-		if (sendto(ctx.fd, data, len, 0, (sockaddr*)&opts->ip, sizeof(opts->ip)) < len) {
+		if (sendto(ctx.fd, data, len, 0, (struct sockaddr*)&opts->ip, sizeof(opts->ip)) < len) {
 			if (!quiet)
 				perror("Send failed");
 			if (verbose)
@@ -167,13 +169,13 @@ bool traceroute(const traceroute_opts* opts, traceroute_result** resptr) {
 		}
 
 		/* Listen for the reply */
-		sockaddr_in fromaddr;
+		struct sockaddr_in fromaddr;
 		socklen_t fromlen = sizeof(fromaddr);
 		ssize_t recv;
 	recvagain:
-		if ((recv = recvfrom(ctx.fd, data, len, 0, (sockaddr*)&fromaddr, &fromlen))) {
-			ip* hdr = (ip*)data;
-			icmp* packet = (icmp*)(data + hdr->ip_hl * 4);
+		if ((recv = recvfrom(ctx.fd, data, len, 0, (struct sockaddr*)&fromaddr, &fromlen))) {
+			struct ip* hdr = (struct ip*)data;
+			struct icmp* packet = (struct icmp*)(data + hdr->ip_hl * 4);
 
 			/* Failure, we'll retry */
 			if (recv < 0) {
@@ -188,14 +190,14 @@ bool traceroute(const traceroute_opts* opts, traceroute_result** resptr) {
 			}
 
 			/* Probably not our data! */
-			if (recv < sizeof(ip) + sizeof(uint64_t))
+			if (recv < sizeof(struct ip) + sizeof(uint64_t))
 				goto recvagain;
 
 			/* Check if it's actually ours and what we expect... */
 			if (packet->icmp_type != ICMP_ECHOREPLY && packet->icmp_type != ICMP_TIME_EXCEEDED && packet->icmp_hun.ih_idseq.icd_id != ctx.ident)
 				goto recvagain;
 
-			traceroute_node* n = (traceroute_node*)calloc(1, sizeof(traceroute_node));
+			struct traceroute_node* n = (struct traceroute_node*)calloc(1, sizeof(struct traceroute_node));
 			if (last)
 				last->next = n;
 			last = n;
@@ -204,16 +206,7 @@ bool traceroute(const traceroute_opts* opts, traceroute_result** resptr) {
 			++result->hops;
 
 			last->in_addr = fromaddr.sin_addr.s_addr;
-
-			/* Try to resolve some address info (better to read than ipv4) */
-			addrinfo* ainfo = NULL;
-			if (getaddrinfo(inet_ntoa(fromaddr.sin_addr), NULL, NULL, &ainfo) != 0)
-				strncpy(last->addr, inet_ntoa(fromaddr.sin_addr), sizeof(last->addr)-1);
-			else
-				strncpy(last->addr, ainfo->ai_canonname ? ainfo->ai_canonname : inet_ntoa(fromaddr.sin_addr), sizeof(last->addr)-1);
-
-			if (ainfo)
-				freeaddrinfo(ainfo);
+			strncpy(last->addr, inet_ntoa(fromaddr.sin_addr), sizeof(last->addr)-1);
 
 			if (!quiet)
 				printf("%2d %s\n", result->hops, last->addr);
@@ -236,7 +229,7 @@ bool traceroute(const traceroute_opts* opts, traceroute_result** resptr) {
 	return hops > 0;
 }
 
-static bool _tr_open(const traceroute_opts* opts, traceroute_ctx* ctx) {
+static bool _tr_open(const struct traceroute_opts* opts, struct traceroute_ctx* ctx) {
 	const bool quiet = opts->log_type < TR_LOG_FULL;
 	socklen_t sockl;
 	int opt = 1;
@@ -254,7 +247,7 @@ static bool _tr_open(const traceroute_opts* opts, traceroute_ctx* ctx) {
 		goto error;
 	}
 
-	timeval tv;
+	struct timeval tv;
 	tv.tv_sec = 2;
 	tv.tv_usec = 0;
 	if (setsockopt(ctx->fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
@@ -270,7 +263,7 @@ static bool _tr_open(const traceroute_opts* opts, traceroute_ctx* ctx) {
 	}
 
 	/* Determine local address so we can build an IP frame */
-	if (getsockname(ctx->fd, (sockaddr*)&ctx->local, &sockl) < 0) {
+	if (getsockname(ctx->fd, (struct sockaddr*)&ctx->local, &sockl) < 0) {
 		if (!quiet)
 			perror("Could not determine local address");
 		goto error;
@@ -284,7 +277,7 @@ error:
 	return false;
 }
 
-static void _tr_make_ip_frame(const traceroute_opts* opts, const traceroute_ctx* ctx, ip* ipf, uint8_t ttl, size_t datalen) {
+static void _tr_make_ip_frame(const struct traceroute_opts* opts, const struct traceroute_ctx* ctx, struct ip* ipf, uint8_t ttl, size_t datalen) {
 	ipf->ip_dst = opts->ip.sin_addr;
 	ipf->ip_v = IPVERSION;
 	ipf->ip_tos = 0; /* Type of service should just be normal... */
@@ -300,7 +293,7 @@ static void _tr_make_ip_frame(const traceroute_opts* opts, const traceroute_ctx*
 }
 
 
-static void _tr_make_icmp(const traceroute_ctx* ctx, tr_packet* packet) {
+static void _tr_make_icmp(const struct traceroute_ctx* ctx, struct tr_packet* packet) {
     packet->icmp_packet.icmp_type = ICMP_ECHO;
     packet->icmp_packet.icmp_code = 0;
     packet->icmp_packet.icmp_hun.ih_idseq.icd_id = ctx->ident;
