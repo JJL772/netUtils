@@ -1,0 +1,3 @@
+
+registrar(register_icmp)
+registrar(register_traceroute)

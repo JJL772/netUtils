@@ -55,19 +55,18 @@ static void traceroute_help();
 #include <epicsExport.h>
 #include <epicsStdlib.h>
 
-static void traceroute(const iocshArgBuf* args);
+static void traceroute_iocsh(const iocshArgBuf* args);
 
 void register_traceroute() {
 	static const iocshArg arg0 = {"args", iocshArgArgv};
 	static const iocshArg* args[] = {&arg0};
 	static const iocshFuncDef func = {"traceroute", 1, args};
-	iocshRegister(&func, traceroute);
+	iocshRegister(&func, traceroute_iocsh);
 }
 
 epicsExportRegistrar(register_traceroute);
 
-
-static void traceroute(const iocshArgBuf* args) {
+static void traceroute_iocsh(const iocshArgBuf* args) {
 	traceroute_cmd(args->aval.ac, args->aval.av);
 }
 #endif

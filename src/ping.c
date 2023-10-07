@@ -29,6 +29,8 @@
 
 #ifndef EPICS
 #define epicsThreadSleep(x) usleep(x * 1e6)
+#else
+#include <epicsThread.h>
 #endif
 
 // Why on earth is this missing from RTEMS??? Not in limits.h or stdint.h????
@@ -245,7 +247,7 @@ bool icmp_ping(const struct ping_opts* opts, struct ping_stats* stats) {
 
             struct ping_packet* rmsg = 
         #if USE_RAW_SOCK
-                (ping_packet*)(data + (ipf->ip_hl * 4)); /* hl = number of 32-bit words in header */
+                (struct ping_packet*)(data + (ipf->ip_hl * 4)); /* hl = number of 32-bit words in header */
         #else
                 (struct ping_packet*)data;
         #endif
