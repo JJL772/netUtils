@@ -39,7 +39,7 @@ static inline struct timespec time_now() {
 
 static inline double time_diff(struct timespec* a, struct timespec* b) {
     double af = a->tv_sec + a->tv_nsec / 1e9;
-    double bf = a->tv_sec + a->tv_nsec / 1e9;
+    double bf = b->tv_sec + b->tv_nsec / 1e9;
     return af - bf;
 }
 

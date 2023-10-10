@@ -26,6 +26,8 @@ enum LogType {
 	PING_LOG_FULL
 };
 
+#define MAX_PING_PAYLOAD_SIZE 65500 /* Good enough... */
+
 struct ping_opts {
 	const char* addr;
 	double interval;
@@ -34,6 +36,8 @@ struct ping_opts {
 	int64_t num_packets; /* -1 = infinite */
 	int log_type;
 	int progress; /* For use with PING_LOG_MINIMAL, every `progress` packets, display status */
+	uint8_t pattern;
+	uint16_t payload_size;
 };
 
 /* Fill ping_opts struct with defaults */

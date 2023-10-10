@@ -1,4 +1,4 @@
-ifeq ($(EPICS_BASE),)
+ifneq ($(EPICS_BASE),)
 
 # Makefile at top of application tree
 TOP = ..
