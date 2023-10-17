@@ -46,6 +46,7 @@
 #if defined(__rtems__)
 #	define USE_RAW_SOCK 1
 #endif
+#define USE_RAW_SOCK 1
 
 struct ping_ctx {
 	int fd;
@@ -114,7 +115,6 @@ static bool _ping_open(const char* addr, const struct ping_opts* opts, struct pi
     p->addr.sin_addr.s_addr = inet_addr(addr);
 
 	struct timeval tv = ms_to_tv(opts->read_timeout * 1e3);
-    printf("%ld.%ld\n", tv.tv_sec, tv.tv_usec);
 	if (setsockopt(p->fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
 		perror("Failed to set SO_RCVTIMEO");
 		close(p->fd);
@@ -136,7 +136,7 @@ static void ping_help() {
 }
 
 static inline uint16_t _cksum(const void* hdr, size_t size) {
-    uint16_t* p = (uint16_t*)hdr;
+    const uint16_t* p = (uint16_t*)hdr;
     assert(size % 2 == 0);
     size /= 2;
     uint16_t r = 0;
@@ -368,7 +368,7 @@ static void _generate_packet(const struct ping_opts* opts, struct ping_packet* m
     msg->sec = sentat.tv_sec;
     msg->nsec = sentat.tv_nsec;
 
-    msg->icmp.icmp_cksum = _cksum(&msg, sizeof(*msg));
+    msg->icmp.icmp_cksum = _cksum(msg, sizeof(*msg));
 }
 
 #ifdef INCLUDE_MAIN

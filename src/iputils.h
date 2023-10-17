@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include <unistd.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <time.h>
@@ -17,6 +18,42 @@ static inline uint16_t ones_sum(uint16_t lhs, uint16_t rhs) {
     return (a & 0xFFFF) + (a >> 16);
 }
 
+
+#if 0
+
+// Computing the internet checksum (RFC 1071).
+// Note that the internet checksum does not preclude collisions.
+uint16_t ip_cksum (const void* data, int len)
+{
+	uint16_t* addr = (uint16_t*)data;
+  int count = len;
+  register uint32_t sum = 0;
+  uint16_t answer = 0;
+
+  // Sum up 2-byte values until none or only one byte left.
+  while (count > 1) {
+    sum += *(addr++);
+    count -= 2;
+  }
+
+  // Add left-over byte, if any.
+  if (count > 0) {
+    sum += *(uint8_t *) addr;
+  }
+
+  // Fold 32-bit sum into 16 bits; we lose information by doing this,
+  // increasing the chances of a collision.
+  // sum = (lower 16 bits) + (upper 16 bits shifted right 16 bits)
+  while (sum >> 16) {
+    sum = (sum & 0xffff) + (sum >> 16);
+  }
+
+  // Checksum is one's compliment of sum.
+  answer = ~sum;
+
+  return (answer);
+}
+#else
 static inline uint16_t ip_cksum(const void* data, size_t len) {
 	size_t rem = len % 2;
 	len /= 2;
@@ -30,6 +67,7 @@ static inline uint16_t ip_cksum(const void* data, size_t len) {
 	}
 	return ~s;
 }
+#endif
 
 static inline struct timespec time_now() {
     struct timespec tp;

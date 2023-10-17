@@ -45,7 +45,7 @@ struct __attribute__((packed)) tr_packet {
 };
 
 static bool _tr_open(const struct traceroute_opts* opts, struct traceroute_ctx* ctx);
-static void _tr_make_ip_frame(const struct traceroute_opts* opts, const struct traceroute_ctx* ctx, struct ip* ipf, uint8_t ttl, size_t datalen);
+static ssize_t _tr_make_ip_frame(const struct traceroute_opts* opts, const struct traceroute_ctx* ctx, struct ip* ipf, uint8_t ttl, size_t datalen);
 static void _tr_make_icmp(const struct traceroute_ctx* ctx, struct tr_packet* packet);
 static void traceroute_help();
 
@@ -73,15 +73,19 @@ static void traceroute_iocsh(const iocshArgBuf* args) {
 
 void traceroute_cmd(int argc, char** argv) {
 	getopt_state_t st;
+	getopt_state_init(&st);
 
 	struct traceroute_opts opts;
 	traceroute_opts_set_default(&opts);
 
 	int opt;
-	while ((opt = getopt_s(argc, argv, "n:h", &st)) != -1) {
+	while ((opt = getopt_s(argc, argv, "n:hv", &st)) != -1) {
 		switch(opt) {
 		case 'n':
 			opts.max_hops = atoi(st.optarg);
+			break;
+		case 'v':
+			opts.log_type = TR_LOG_VERBOSE;
 			break;
 		case 'h':
 			traceroute_help();
@@ -150,12 +154,10 @@ bool traceroute(const struct traceroute_opts* opts, struct traceroute_result** r
 			break;
 		}
 
-		/* Send the request */
 		char data[4096];
-		ssize_t len = sizeof(struct ip) + sizeof(struct icmp);
 
 		/* Build IP frame + ICMP payload */
-		_tr_make_ip_frame(opts, &ctx, (struct ip*)data, ttl, len);
+		const ssize_t len = _tr_make_ip_frame(opts, &ctx, (struct ip*)data, ttl, sizeof(struct icmp));
 		_tr_make_icmp(&ctx, (struct tr_packet*)(data + sizeof(struct ip)));
 
 		if (sendto(ctx.fd, data, len, 0, (struct sockaddr*)&opts->ip, sizeof(opts->ip)) < len) {
@@ -240,11 +242,7 @@ static bool _tr_open(const struct traceroute_opts* opts, struct traceroute_ctx* 
 		return false;
 	}
 
-	if (setsockopt(ctx->fd, IPPROTO_IP, IP_HDRINCL, &opt, sizeof(opt)) < 0) {
-		if (!quiet)
-			perror("Failed to set IP_HDRINCL");
-		goto error;
-	}
+	ctx->ident = 5930;
 
 	struct timeval tv;
 	tv.tv_sec = 2;
@@ -261,6 +259,14 @@ static bool _tr_open(const struct traceroute_opts* opts, struct traceroute_ctx* 
 		goto error;
 	}
 
+	/* Enable HDRINCL because we need to tweak the IP header */
+	opt = 1;
+	if (setsockopt(ctx->fd, IPPROTO_IP, IP_HDRINCL, &opt, sizeof(opt)) < 0) {
+		if (!quiet)
+			perror("Failed to set IP_HDRINCL");
+		goto error;
+	}
+
 	/* Determine local address so we can build an IP frame */
 	if (getsockname(ctx->fd, (struct sockaddr*)&ctx->local, &sockl) < 0) {
 		if (!quiet)
@@ -268,7 +274,6 @@ static bool _tr_open(const struct traceroute_opts* opts, struct traceroute_ctx* 
 		goto error;
 	}
 
-	ctx->ident = 5930;
 	return true;
 
 error:
@@ -276,7 +281,8 @@ error:
 	return false;
 }
 
-static void _tr_make_ip_frame(const struct traceroute_opts* opts, const struct traceroute_ctx* ctx, struct ip* ipf, uint8_t ttl, size_t datalen) {
+/* Build an IP frame, returns the length of the entire packet */
+static ssize_t _tr_make_ip_frame(const struct traceroute_opts* opts, const struct traceroute_ctx* ctx, struct ip* ipf, uint8_t ttl, size_t datalen) {
 	ipf->ip_dst = opts->ip.sin_addr;
 	ipf->ip_v = IPVERSION;
 	ipf->ip_tos = 0; /* Type of service should just be normal... */
@@ -288,11 +294,13 @@ static void _tr_make_ip_frame(const struct traceroute_opts* opts, const struct t
 	ipf->ip_len = datalen + sizeof(*ipf);
 	ipf->ip_off = 0;
 	ipf->ip_sum = 0;
-	ipf->ip_sum = ip_cksum(&ipf, sizeof(*ipf));
+	ipf->ip_sum = ip_cksum(ipf, sizeof(*ipf));
+	return ipf->ip_len;
 }
 
 
 static void _tr_make_icmp(const struct traceroute_ctx* ctx, struct tr_packet* packet) {
+	memset(packet, 0, sizeof(*packet));
     packet->icmp_packet.icmp_type = ICMP_ECHO;
     packet->icmp_packet.icmp_code = 0;
     packet->icmp_packet.icmp_hun.ih_idseq.icd_id = ctx->ident;

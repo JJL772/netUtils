@@ -1,7 +1,13 @@
-ifneq ($(EPICS_BASE),)
-
 # Makefile at top of application tree
 TOP = ..
+-include $(TOP)/configure/CONFIG
+
+ifneq ($(EPICS_BASE),)
+EPICS_BUILD ?= YES
+endif
+
+ifeq ($(EPICS_BUILD),YES)
+# Include again to ensure it's actually pulled in
 include $(TOP)/configure/CONFIG
 
 # Directories to be built, in any order.
@@ -16,24 +22,35 @@ DIRS += $(wildcard db* *Db*)
 include $(TOP)/configure/RULES_DIRS
 
 else
+
 ARCH?=$(shell uname -s | tr A-Z a-z)-$(shell uname -m)
 OUT=bin/$(ARCH)
-CXXFLAGS:=$(CXXFLAGS) $(CFLAGS) -DINCLUDE_MAIN=1
+CPPFLAGS=-DINCLUDE_MAIN=1 -ggdb
+CFLAGS+=-std=gnu99 $(CPPFLAGS)
+CXXFLAGS:=$(CPPFLAGS) -std=c++0x
 PREFIX?=/usr/local
 LDFLAGS+=-lm
 
-all: $(OUT)/ping $(OUT)/traceroute
+ifeq ($(ASAN),YES)
+CPPFLAGS+=-fsanitize=address 
+endif
+
+all: $(OUT)/ping $(OUT)/traceroute $(OUT)/netstats
 
 bin/$(ARCH):
 	mkdir -p bin/$(ARCH)
 
 $(OUT)/traceroute: src/traceroute.c src/getopt_s.c
 	mkdir -p $(OUT)
-	$(CC) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) -DTRACEROUTE_UTIL -o $@ $^ $(LDFLAGS)
 
 $(OUT)/ping: src/ping.c src/getopt_s.c
 	mkdir -p $(OUT)
-	$(CC) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) -DPING_UTIL -o $@ $^ $(LDFLAGS)
+
+$(OUT)/netstats: src/netstats.cc src/getopt_s.c
+	mkdir -p $(OUT)
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
 
 install:
 	mkdir -p $(PREFIX)/include/netutils
