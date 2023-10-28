@@ -1,4 +1,6 @@
-
+/**
+ * traceroute.c -- Simple traceroute utility and library
+ */
 #include <memory.h>
 
 #include <sys/types.h>
