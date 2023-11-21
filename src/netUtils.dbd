@@ -1,3 +1,4 @@
 
 registrar(register_icmp)
 registrar(register_traceroute)
+registrar(register_probe)

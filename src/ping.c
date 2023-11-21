@@ -247,6 +247,7 @@ bool icmp_ping(const struct ping_opts* opts, struct ping_stats* stats) {
                 perror("failed");
         }
         stats->lost++;
+        stats->sent++;
 
         // Store time, so we can compute how long to sleep for
         struct timespec recv_start = time_now();
@@ -254,7 +255,6 @@ bool icmp_ping(const struct ping_opts* opts, struct ping_stats* stats) {
         // Recv some ICMP packets, accounting for some out of order delivery
 recvagain:
         while(1) {
-        //for (int rp = 0; rp < 10 && stats->lost; ++rp) {
 
             struct timespec recv_now = time_now();
             if (time_diff(&recv_now, &recv_start) >= opts->interval) {

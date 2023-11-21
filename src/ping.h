@@ -17,9 +17,9 @@ struct ping_stats {
 	float minTime;
 	float maxTime;
 	float avgTime;
-	int64_t sent;
-	int64_t lost;
-	int64_t corrupted;
+	int sent;
+	int lost;
+	int corrupted;
 };
 
 enum LogType {

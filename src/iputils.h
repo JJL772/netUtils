@@ -44,6 +44,9 @@ static inline double time_diff(struct timespec* a, struct timespec* b) {
     return af - bf;
 }
 
+#define CLAMP(_val, _min, _max) ((_val) < (_min) ? (_min) : ((_val) > (_max) ? (_max) : (_val)))
+
+
 #ifdef __cplusplus
 }
 #endif

@@ -20,7 +20,7 @@ USR_CFLAGS += -DEPICS -std=c99
 DBD += netUtils.dbd
 
 # specify all source files to be compiled and added to the library
-netUtils_SRCS += ping.c traceroute.c 
+netUtils_SRCS += ping.c traceroute.c probe.c
 #netUtils_SRCS += netstats.cc
 
 INC += ping.h
