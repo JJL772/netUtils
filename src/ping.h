@@ -11,6 +11,8 @@
 extern "C" {
 #endif
 
+#include <stdbool.h>
+
 struct ping_stats {
 	float minTime;
 	float maxTime;
@@ -29,7 +31,7 @@ enum LogType {
 #define MAX_PING_PAYLOAD_SIZE 65500 /* Good enough... */
 
 struct ping_opts {
-	const char* addr;
+	in_addr_t addr;
 	double interval;
 	float send_timeout;
 	float read_timeout;
@@ -41,7 +43,7 @@ struct ping_opts {
 };
 
 /* Fill ping_opts struct with defaults */
-void icmp_ping_defaults(struct ping_opts* opts);
+void icmp_ping_opts_init(struct ping_opts* opts);
 
 bool icmp_ping_cmd(int argc, char** argv);
 

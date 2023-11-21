@@ -78,7 +78,7 @@ void traceroute_cmd(int argc, char** argv) {
 	getopt_state_init(&st);
 
 	struct traceroute_opts opts;
-	traceroute_opts_set_default(&opts);
+	traceroute_opts_init(&opts);
 
 	int opt;
 	while ((opt = getopt_s(argc, argv, "n:hv", &st)) != -1) {
@@ -115,7 +115,7 @@ static void traceroute_help() {
 	printf("Usage: traceroute [-n max_hops] addr\n");
 }
 
-void traceroute_opts_set_default(struct traceroute_opts* opts) {
+void traceroute_opts_init(struct traceroute_opts* opts) {
 	memset(opts, 0, sizeof(*opts));
 	opts->log_type = TR_LOG_FULL;
 	opts->max_hops = 128;

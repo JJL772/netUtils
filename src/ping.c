@@ -29,6 +29,7 @@
 
 #ifndef EPICS
 #define epicsThreadSleep(x) usleep(x * 1e6)
+#define epicsStdoutPrintf printf
 #else
 #include <epicsThread.h>
 #endif
@@ -60,7 +61,7 @@ struct __attribute__((packed)) ping_packet {
     char payload[];
 };
 
-static bool _icmp_validate(const struct ping_opts* opts, struct ping_packet* packet);
+static bool _icmp_validate(const struct ping_opts* opts, struct ping_packet* packet, ssize_t recv_size);
 static void _generate_packet(const struct ping_opts* opts, struct ping_packet* packet, uint16_t seq, uint16_t ident);
 
 #ifdef EPICS
@@ -72,7 +73,7 @@ static void ping(const iocshArgBuf* args);
 
 static void register_icmp() {
     static iocshArg arg0 = {"args", iocshArgArgv};
-    static iocshArg* args[] = {&arg0};
+    static const iocshArg* const args[] = {&arg0};
     static iocshFuncDef func = {"ping", 1, args};
     iocshRegister(&func, ping);
 }
@@ -94,7 +95,7 @@ static struct timeval ms_to_tv(double ms) {
 	return tv;
 }
 
-static bool _ping_open(const char* addr, const struct ping_opts* opts, struct ping_ctx* p) {
+static bool _ping_open(in_addr_t addr, const struct ping_opts* opts, struct ping_ctx* p) {
 #ifdef USE_RAW_SOCK
     p->fd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
 #else
@@ -112,7 +113,7 @@ static bool _ping_open(const char* addr, const struct ping_opts* opts, struct pi
     memset(&p->addr, 0, sizeof(p->addr));
     p->addr.sin_family = AF_INET;
     p->addr.sin_port = 5555;
-    p->addr.sin_addr.s_addr = inet_addr(addr);
+    p->addr.sin_addr.s_addr = addr;
 
 	struct timeval tv = ms_to_tv(opts->read_timeout * 1e3);
 	if (setsockopt(p->fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
@@ -145,7 +146,7 @@ static inline uint16_t _cksum(const void* hdr, size_t size) {
     return ~r;
 }
 
-void icmp_ping_defaults(struct ping_opts* opts) {
+void icmp_ping_opts_init(struct ping_opts* opts) {
 	memset(opts, 0, sizeof(*opts));
 	opts->num_packets = 5;
 	opts->interval = 1;
@@ -158,7 +159,7 @@ void icmp_ping_defaults(struct ping_opts* opts) {
 
 bool icmp_ping_cmd(int argc, char** argv) {
 	struct ping_opts opts;
-	icmp_ping_defaults(&opts);
+	icmp_ping_opts_init(&opts);
 	
     int opt;
     getopt_state_t st;
@@ -205,9 +206,10 @@ bool icmp_ping_cmd(int argc, char** argv) {
 		return false;
 	}
 
-    opts.addr = argv[st.optind];
+    opts.addr = inet_addr(argv[st.optind]);
 
-    printf("PING %s %d (%zu) bytes of data, pattern %d\n", opts.addr, opts.payload_size, opts.payload_size + sizeof(struct ping_packet), opts.pattern);
+    struct in_addr a = {opts.addr};
+    printf("PING %s %d (%zu) bytes of data, pattern %d\n", inet_ntoa(a), opts.payload_size, opts.payload_size + sizeof(struct ping_packet), opts.pattern);
 
 	struct ping_stats stats;
 	return icmp_ping(&opts, &stats);
@@ -236,6 +238,7 @@ bool icmp_ping(const struct ping_opts* opts, struct ping_stats* stats) {
             struct ping_packet msg;
             char raw[65535];
         } m;
+
         const size_t packet_size = sizeof(struct ping_packet) + opts->payload_size;
         _generate_packet(opts, &m.msg, seq, ident);
 
@@ -250,7 +253,14 @@ bool icmp_ping(const struct ping_opts* opts, struct ping_stats* stats) {
 
         // Recv some ICMP packets, accounting for some out of order delivery
 recvagain:
-        for (int rp = 0; rp < 10 && stats->lost; ++rp) {
+        while(1) {
+        //for (int rp = 0; rp < 10 && stats->lost; ++rp) {
+
+            struct timespec recv_now = time_now();
+            if (time_diff(&recv_now, &recv_start) >= opts->interval) {
+                break;
+            }
+
             struct sockaddr_in fromaddr;
             socklen_t fromsize = sizeof(fromaddr);
             ssize_t ret;
@@ -258,12 +268,20 @@ recvagain:
             // Recv logic is a bit more convoluted when using SOCK_RAW. We recv a full IP frame instead of just the payload
             struct ip* ipf = (struct ip*)m.raw;
 
-            if ((ret = recvfrom(ctx.fd, m.raw, packet_size, 0, (struct sockaddr*)&fromaddr, &fromsize)) < (ssize_t)(packet_size)) {
+            const size_t recv_size = packet_size + sizeof(struct ip);
+            if ((ret = recvfrom(ctx.fd, m.raw, recv_size, 0, (struct sockaddr*)&fromaddr, &fromsize)) < (ssize_t)(sizeof(struct ping_packet))) {
                 // No more data left, bail out!
                 if (errno == EAGAIN || errno == EWOULDBLOCK)
                     break;
                 continue;
             }
+
+        #ifdef USE_RAW_SOCK
+            ret -= sizeof(struct ip);
+        #endif
+
+            // Certain servers may be configured to truncate ICMP requests above a certain size (i.e. google.com)
+            int trunc = ret < sizeof(struct ping_packet);
 
             struct timespec now = time_now();
 
@@ -275,11 +293,11 @@ recvagain:
         #endif
 
             // Filter out any non-echo requests, or messages we don't own
-            if (rmsg->icmp.icmp_type != ICMP_ECHOREPLY /*|| msg.icmp.icmp_hun.ih_idseq.icd_id != ident*/)
+            if (rmsg->icmp.icmp_type != ICMP_ECHOREPLY || rmsg->icmp.icmp_hun.ih_idseq.icd_id != ident)
                 continue;
 
             // Validate ICMP packet
-            if (!_icmp_validate(opts, rmsg)) {
+            if (!_icmp_validate(opts, rmsg, ret)) {
                 if (!silent)
                     printf("malformed ICMP packet with SEQ %d!\n", rmsg->icmp.icmp_hun.ih_idseq.icd_seq);
                 ++stats->corrupted;
@@ -294,10 +312,10 @@ recvagain:
             packetIdx++;
 
             if (!quiet)
-                printf("%ld bytes from %s: icmp_seq=%d time=%.2f ms %s%s\n", 
+                printf("%ld bytes from %s: icmp_seq=%d time=%.2f ms %s%s%s\n", 
                     (long int)(ret - ipf->ip_hl * 4), inet_ntoa(fromaddr.sin_addr), rmsg->icmp.icmp_hun.ih_idseq.icd_seq, diffms,
                     (lastseq != (int)(rmsg->icmp.icmp_hun.ih_idseq.icd_seq) - 1) ? "(OUT OF ORDER)" : "",
-                    stats->lost == 0 ? "(DUP)" : "");
+                    stats->lost == 0 ? "(DUP)" : "", trunc ? "(TRUNC)" : "");
 
             lastseq = rmsg->icmp.icmp_hun.ih_idseq.icd_seq;
             --stats->lost;
@@ -323,19 +341,21 @@ recvagain:
             epicsThreadSleep(to_sleep);
     }
 
+    close(ctx.fd);
+
     // Print stats
     if (!silent) {
         printf("%llu packets transmitted, %llu received, %lld corrupted, %.2f%% packet loss\n", (long long unsigned)seq, 
-            (long long unsigned)seq - stats->lost, (long long)stats->corrupted, ((float)(stats->corrupted) / (float)(seq)) * 100.f);
+            (long long unsigned)seq - stats->lost, (long long)stats->corrupted, 100.f * ((float)(stats->lost) / seq));
         printf("min=%.2f ms, max=%.2f ms, avg=%.2f ms\n", stats->minTime, stats->maxTime, stats->avgTime);
     }
     return stats->corrupted == 0 && stats->lost == 0;
 }
 
-static bool _icmp_validate(const struct ping_opts* opts, struct ping_packet* packet) {
+static bool _icmp_validate(const struct ping_opts* opts, struct ping_packet* packet, ssize_t recv_size) {
     uint16_t sum = packet->icmp.icmp_cksum;
     packet->icmp.icmp_cksum = 0;
-    const uint16_t actualSum = _cksum(packet, sizeof(*packet));
+    const uint16_t actualSum = _cksum(packet, recv_size);
 
     if (sum != actualSum) {
         printf("bad checksum for icmp_seq=%d: packet checksum=0x%X, expected checksum=0x%X\n",
@@ -344,8 +364,10 @@ static bool _icmp_validate(const struct ping_opts* opts, struct ping_packet* pac
 
     packet->icmp.icmp_cksum = sum;
 
+    const ssize_t toCheck = recv_size - sizeof(struct ping_packet);
+
     bool ok = true;
-    for (int i = 0; i < opts->payload_size; ++i) {
+    for (int i = 0; i < toCheck; ++i) {
         if ((char)opts->pattern != packet->payload[i]) {
             printf("Data failed to validate, expected %d at byte %d, but got %d insteaad!\n", opts->pattern, i, packet->payload[i]);
             ok = false;
@@ -368,7 +390,7 @@ static void _generate_packet(const struct ping_opts* opts, struct ping_packet* m
     msg->sec = sentat.tv_sec;
     msg->nsec = sentat.tv_nsec;
 
-    msg->icmp.icmp_cksum = _cksum(msg, sizeof(*msg));
+    msg->icmp.icmp_cksum = _cksum(msg, sizeof(*msg) + opts->payload_size);
 }
 
 #ifdef INCLUDE_MAIN

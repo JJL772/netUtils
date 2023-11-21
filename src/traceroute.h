@@ -34,7 +34,7 @@ struct traceroute_result {
 	struct traceroute_node* first;
 };
 
-void traceroute_opts_set_default(struct traceroute_opts* opts);
+void traceroute_opts_init(struct traceroute_opts* opts);
 
 void traceroute_cmd(int argc, char** argv);
 
