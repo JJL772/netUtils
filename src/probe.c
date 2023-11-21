@@ -19,6 +19,12 @@
 
 static void show_help();
 
+#ifdef EPICS
+#include <epicsThread.h>
+static epicsThreadId s_probeThread;
+static int s_threadRun = 1;
+#endif
+
 #define MAX_ADDRS 64
 struct probe_opts_s {
     float time;
@@ -50,6 +56,8 @@ int probe_cmd(int argc, char** argv) {
         switch(opt) {
         case 't':
             time = atof(st.optarg);
+			if (time < 0)
+				time = 60 * 60 * 24 * 365 * 10; /* Just run for 10 years !!! */
             break;
         case 'h':
             show_help();
@@ -112,15 +120,21 @@ static void probe_one(struct probe_opts_s* probe_opts, int cur_addr, struct prob
 
     struct timespec start = time_now();
 
-    const uint8_t patterns[10] = {0xA5, 0xAA, 0xFF, 0x1, 0x10, 0xF0, 0x0F, 0x7F, 0x0, 0x5A};
-    const uint32_t sizes[10] = {128, 512, 4096, 8192, 16384, 20000, 30000, 32768, 48000, 50000};
+	#define NUM_SAMPLES 10
+    const uint8_t patterns[NUM_SAMPLES] = {0xA5, 0xAA, 0xFF, 0x1, 0x10, 0xF0, 0x0F, 0x7F, 0x0, 0x5A};
+    const uint32_t sizes[NUM_SAMPLES] = {128, 256, 512, 760, 1024, 2048, 4096, 8192, 16384, 20000};
 
     while (1)
     {
         for (int i = 0; i < probe_opts->tries; ++i) {
-            const uint32_t size = CLAMP(sizes[i], 1, probe_opts->max_size);
+		#ifdef EPICS
+			if (!s_threadRun)
+				return;
+		#endif
+
+            const uint32_t size = CLAMP(sizes[i % NUM_SAMPLES], 1, probe_opts->max_size);
             struct ping_opts popts = defpopts;
-            popts.pattern = patterns[i];
+            popts.pattern = patterns[i % NUM_SAMPLES];
             popts.payload_size = size;
 
             printf("------------------------\nPinging %s, size %u, \n", strAddr, size);
@@ -133,7 +147,7 @@ static void probe_one(struct probe_opts_s* probe_opts, int cur_addr, struct prob
 
             /* TODO: Merge this pstat with the result */
             printf("  Completed (pattern 0x%X, size %u): %d sent, %d lost, %d corrupted, maxTime %f, minTime %f, avgTime %f\n",
-                (int)patterns[i], size, pstat.sent, pstat.lost, pstat.corrupted, pstat.maxTime, pstat.minTime, pstat.avgTime);
+                (int)patterns[i % NUM_SAMPLES], size, pstat.sent, pstat.lost, pstat.corrupted, pstat.maxTime, pstat.minTime, pstat.avgTime);
         }
 
         struct timespec now = time_now();
@@ -153,6 +167,10 @@ static void probe(struct probe_opts_s* opts) {
     for (int i = 0; i < opts->numaddrs; ++i) {
         struct probe_result_s res;
         probe_one(opts, i, &res);
+	#ifdef EPICS
+		if (!s_threadRun)
+			return;
+	#endif
     }
 }
 
@@ -164,8 +182,46 @@ static void show_help() {
 #include <iocsh.h>
 #include <epicsExport.h>
 
+struct thr_arg {
+	int ac;
+	char* av[64];
+};
+
+static void _probe_thr(void* arg) {
+	struct thr_arg* args = (struct thr_arg*)arg;
+    probe_cmd(args->ac, args->av);
+	s_probeThread = 0;
+}
+
 static void probe_iocsh(const iocshArgBuf* buf) {
-    probe_cmd(buf[0].aval.ac, buf[0].aval.av);
+
+	probe_cmd(buf[0].aval.ac, buf[0].aval.av);
+	return;
+
+	static struct thr_arg args;
+	args.ac = buf[0].aval.ac;
+
+	static char avs[64][80];
+	for (int i = 0; i < args.ac && i < 64; ++i) {
+		strncpy(avs[i], buf[0].aval.av[i], sizeof(avs[i]));
+		avs[i][sizeof(avs[i])-1] = 0;
+		args.av[i] = avs[i];
+	}
+
+	epicsThreadOpts opts;
+	opts.joinable = 1;
+	opts.priority = epicsThreadPriorityMedium;
+	opts.stackSize = epicsThreadStackBig;
+	if (!(s_probeThread = epicsThreadCreateOpt("probe", _probe_thr, &args, &opts))) {
+		printf("Failed to create thread\n");
+	}
+}
+
+static void probe_kill(const iocshArgBuf* buf) {
+	if (s_probeThread) {
+		s_threadRun = 0;
+		epicsThreadMustJoin(s_probeThread);
+	}
 }
 
 void register_probe() {
@@ -173,6 +229,9 @@ void register_probe() {
     static const iocshArg* args[] = { &arg };
     static const iocshFuncDef func = {"probe", 1, args};
     iocshRegister(&func, probe_iocsh);
+
+	static const iocshFuncDef kill_func = {"probeStop", 0, NULL};
+	iocshRegister(&kill_func, probe_kill);
 }
 epicsExportRegistrar(register_probe);
 #endif
