@@ -136,16 +136,6 @@ static void ping_help() {
 	printf("Usage: ping [-c count] [-i interval] [-s payload size] [-p pattern] [-l progress interval] [-q] ADDR\n");
 }
 
-static inline uint16_t _cksum(const void* hdr, size_t size) {
-    const uint16_t* p = (uint16_t*)hdr;
-    assert(size % 2 == 0);
-    size /= 2;
-    uint16_t r = 0;
-    for (size_t n = 0; n < size; ++n)
-        r = ones_sum(r, p[n]);
-    return ~r;
-}
-
 void icmp_ping_opts_init(struct ping_opts* opts) {
 	memset(opts, 0, sizeof(*opts));
 	opts->num_packets = 5;
@@ -355,7 +345,7 @@ recvagain:
 static bool _icmp_validate(const struct ping_opts* opts, struct ping_packet* packet, ssize_t recv_size) {
     uint16_t sum = packet->icmp.icmp_cksum;
     packet->icmp.icmp_cksum = 0;
-    const uint16_t actualSum = _cksum(packet, recv_size);
+    const uint16_t actualSum = ip_cksum(packet, recv_size);
 
     if (sum != actualSum) {
         printf("bad checksum for icmp_seq=%d: packet checksum=0x%X, expected checksum=0x%X\n",
@@ -390,7 +380,7 @@ static void _generate_packet(const struct ping_opts* opts, struct ping_packet* m
     msg->sec = sentat.tv_sec;
     msg->nsec = sentat.tv_nsec;
 
-    msg->icmp.icmp_cksum = _cksum(msg, sizeof(*msg) + opts->payload_size);
+    msg->icmp.icmp_cksum = ip_cksum(msg, sizeof(*msg) + opts->payload_size);
 }
 
 #ifdef INCLUDE_MAIN

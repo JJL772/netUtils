@@ -27,7 +27,7 @@ static inline uint16_t ip_cksum(const void* data, size_t len) {
 	if (rem) {
 		union { uint16_t a; uint8_t b[2]; } tb = {0};
 		tb.b[0] = *(((const uint8_t*)data) + len*2);
-		return ones_sum(s, tb.a);
+		s = ones_sum(s, tb.a);
 	}
 	return ~s;
 }
