@@ -44,6 +44,14 @@ static inline double time_diff(struct timespec* a, struct timespec* b) {
     return af - bf;
 }
 
+static inline char* time_now_str(char* buf, size_t l) {
+	struct tm tm;
+	time_t t = time(NULL);
+	localtime_r(&t, &tm);
+	strftime(buf, l, "%Y-%m-%d %H:%M:%S", &tm);
+	return buf;
+}
+
 #define CLAMP(_val, _min, _max) ((_val) < (_min) ? (_min) : ((_val) > (_max) ? (_max) : (_val)))
 
 

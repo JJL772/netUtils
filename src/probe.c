@@ -11,6 +11,7 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <net/if.h>
+#include <pthread.h>
 
 #include "ping.h"
 #include "traceroute.h"
@@ -18,12 +19,6 @@
 #include "getopt_s.h"
 
 static void show_help();
-
-#ifdef EPICS
-#include <epicsThread.h>
-static epicsThreadId s_probeThread;
-static int s_threadRun = 1;
-#endif
 
 #define MAX_ADDRS 64
 struct probe_opts_s {
@@ -33,6 +28,7 @@ struct probe_opts_s {
     int verbose;
     int tries;          /* How many samples? */
     int max_size;
+    int sentry;
 };
 
 struct probe_result_s {
@@ -40,19 +36,31 @@ struct probe_result_s {
     struct traceroute_result* tstat;
 };
 
+static pthread_t s_thread;
+static pthread_attr_t s_thrattr;
+static int s_threadRun = 1;
+
 static void probe(struct probe_opts_s* opts);
 void probe_opts_init(struct probe_opts_s* opts);
 
+static void* _probe_sentry(void*);
+
 int probe_cmd(int argc, char** argv) {
+
+    if (s_thread) {
+        printf("Thread already running\n");
+        return -1;
+    }
+
     getopt_state_t st;
     getopt_state_init(&st);
 
-    struct probe_opts_s opts;
-    probe_opts_init(&opts);
+    struct probe_opts_s *opts = calloc(1, sizeof(struct probe_opts_s));
+    probe_opts_init(opts);
 
     int opt = 0;
     float time = 60 * 5; // Probe for 5 minutes by default
-    while ((opt = getopt_s(argc, argv, "t:hvc:m:", &st)) != -1) {
+    while ((opt = getopt_s(argc, argv, "t:hvc:m:s", &st)) != -1) {
         switch(opt) {
         case 't':
             time = atof(st.optarg);
@@ -63,13 +71,16 @@ int probe_cmd(int argc, char** argv) {
             show_help();
             break;
         case 'v':
-            opts.verbose++;
+            opts->verbose++;
             break;
         case 'c':
-            opts.tries = atoi(st.optarg);
+            opts->tries = atoi(st.optarg);
+            break;
+        case 's':
+            opts->sentry = 1;
             break;
         case 'm':
-            opts.max_size = atoi(st.optarg);
+            opts->max_size = atoi(st.optarg);
             break;
         default:
             break;
@@ -77,22 +88,37 @@ int probe_cmd(int argc, char** argv) {
     }
 
     for (int i = st.optind; i < argc; ++i) {
-        if (opts.numaddrs < MAX_ADDRS)
-            opts.addrs[opts.numaddrs++] = inet_addr(argv[i]);
+        if (opts->numaddrs < MAX_ADDRS)
+            opts->addrs[opts->numaddrs++] = inet_addr(argv[i]);
     }
 
-    if (opts.numaddrs <= 0) {
+    if (opts->numaddrs <= 0) {
         show_help();
         return -1;
     }
 
-    opts.time = time;
+    opts->time = time;
 
-    probe(&opts);
+    if (opts->sentry) {
+        pthread_attr_init(&s_thrattr);
+        pthread_create(&s_thread, &s_thrattr, _probe_sentry, opts);
+    }
+    else {
+        probe(opts);
+        free(opts);
+    }
     return 0;
 }
 
-static void probe_one(struct probe_opts_s* probe_opts, int cur_addr, struct probe_result_s* result) {
+static void* _probe_sentry(void* p) {
+    probe(p);
+    free(p);
+    pthread_attr_destroy(&s_thrattr);
+    s_thread = 0;
+    return NULL;
+}
+
+static void _probe_one(struct probe_opts_s* probe_opts, int cur_addr, struct probe_result_s* result) {
     struct traceroute_opts opts;
     traceroute_opts_init(&opts);
     opts.ip.sin_addr.s_addr = probe_opts->addrs[cur_addr];
@@ -114,9 +140,9 @@ static void probe_one(struct probe_opts_s* probe_opts, int cur_addr, struct prob
     }
 
     defpopts.addr = probe_opts->addrs[cur_addr];
-    defpopts.num_packets = 100;
+    defpopts.num_packets = probe_opts->sentry ? 10 : 100;
     defpopts.interval = 0.25; /* ~4 packets a second */
-    defpopts.log_type = probe_opts->verbose ? PING_LOG_FULL : PING_LOG_MINIMAL;
+    defpopts.log_type = probe_opts->verbose ? PING_LOG_FULL : probe_opts->sentry ? PING_LOG_NONE : PING_LOG_MINIMAL;
 
     struct timespec start = time_now();
 
@@ -129,18 +155,17 @@ static void probe_one(struct probe_opts_s* probe_opts, int cur_addr, struct prob
     while (1)
     {
         for (int i = 0; i < probe_opts->tries; ++i) {
-		#ifdef EPICS
 			if (!s_threadRun)
 				return;
-		#endif
 
             const uint32_t size = CLAMP(sizes[i % NUM_SAMPLES], 1, probe_opts->max_size);
             struct ping_opts popts = defpopts;
             popts.pattern = patterns[rand() % NUM_SAMPLES];
-            popts.payload_size = size;
-			popts.interval = intervals[rand() % NUM_SAMPLES];
+            popts.payload_size = probe_opts->sentry ? 80 : size;
+			popts.interval = probe_opts->sentry ? 0.5 : intervals[rand() % NUM_SAMPLES];
 
-            printf("------------------------\nPinging %s, size %u, pattern 0x%X, interval %f\n", strAddr, size, (int)popts.pattern, popts.interval);
+            if (!probe_opts->sentry)
+                printf("------------------------\nPinging %s, size %u, pattern 0x%X, interval %f\n", strAddr, size, (int)popts.pattern, popts.interval);
 
             struct ping_stats pstat;
             if (!icmp_ping(&popts, &pstat) && !pstat.sent) {
@@ -149,12 +174,17 @@ static void probe_one(struct probe_opts_s* probe_opts, int cur_addr, struct prob
             }
 
             /* TODO: Merge this pstat with the result */
-            printf("  Completed (pattern 0x%X, size %u): %d sent, %d lost, %d corrupted, maxTime %f, minTime %f, avgTime %f\n",
-                (int)popts.pattern, size, pstat.sent, pstat.lost, pstat.corrupted, pstat.maxTime, pstat.minTime, pstat.avgTime);
+            if (!probe_opts->sentry)
+                printf("  Completed (pattern 0x%X, size %u): %d sent, %d lost, %d corrupted, maxTime %f, minTime %f, avgTime %f\n",
+                    (int)popts.pattern, size, pstat.sent, pstat.lost, pstat.corrupted, pstat.maxTime, pstat.minTime, pstat.avgTime);
+            else if (pstat.lost) {
+                char b[128];
+                printf("[%s] lost %d packets to %s\n", time_now_str(b, sizeof(b)), pstat.lost, strAddr);
+            }
         }
 
         struct timespec now = time_now();
-        if (time_diff(&now, &start) >= probe_opts->time)
+        if (!probe_opts->sentry && time_diff(&now, &start) >= probe_opts->time)
             break;
     }
 }
@@ -169,7 +199,7 @@ void probe_opts_init(struct probe_opts_s* opts) {
 static void probe(struct probe_opts_s* opts) {
     for (int i = 0; i < opts->numaddrs; ++i) {
         struct probe_result_s res;
-        probe_one(opts, i, &res);
+        _probe_one(opts, i, &res);
 	#ifdef EPICS
 		if (!s_threadRun)
 			return;
@@ -190,41 +220,16 @@ struct thr_arg {
 	char* av[64];
 };
 
-static void _probe_thr(void* arg) {
-	struct thr_arg* args = (struct thr_arg*)arg;
-    probe_cmd(args->ac, args->av);
-	s_probeThread = 0;
-}
-
 static void probe_iocsh(const iocshArgBuf* buf) {
-
 	probe_cmd(buf[0].aval.ac, buf[0].aval.av);
-	return;
-
-	static struct thr_arg args;
-	args.ac = buf[0].aval.ac;
-
-	static char avs[64][80];
-	for (int i = 0; i < args.ac && i < 64; ++i) {
-		strncpy(avs[i], buf[0].aval.av[i], sizeof(avs[i]));
-		avs[i][sizeof(avs[i])-1] = 0;
-		args.av[i] = avs[i];
-	}
-
-	epicsThreadOpts opts;
-	opts.joinable = 1;
-	opts.priority = epicsThreadPriorityMedium;
-	opts.stackSize = epicsThreadStackBig;
-	if (!(s_probeThread = epicsThreadCreateOpt("probe", _probe_thr, &args, &opts))) {
-		printf("Failed to create thread\n");
-	}
 }
 
 static void probe_kill(const iocshArgBuf* buf) {
-	if (s_probeThread) {
-		s_threadRun = 0;
-		epicsThreadMustJoin(s_probeThread);
-	}
+    if (!s_thread)
+        return;
+    s_threadRun = 0;
+    pthread_join(s_thread, NULL);
+    s_threadRun = 1;
 }
 
 void register_probe() {
