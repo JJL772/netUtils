@@ -40,7 +40,7 @@ void traceroute_cmd(int argc, char** argv);
 
 bool traceroute(const struct traceroute_opts* opts, struct traceroute_result** result);
 
-void traceresult_free(struct traceroute_result* result);
+void traceroute_result_free(struct traceroute_result* result);
 
 #ifdef __cplusplus
 }

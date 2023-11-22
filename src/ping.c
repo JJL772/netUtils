@@ -383,7 +383,7 @@ static void _generate_packet(const struct ping_opts* opts, struct ping_packet* m
     msg->icmp.icmp_cksum = ip_cksum(msg, sizeof(*msg) + opts->payload_size);
 }
 
-#ifdef INCLUDE_MAIN
+#ifdef PING_MAIN
 
 int main(int argc, char** argv) {
     return icmp_ping_cmd(argc, argv) ? 0 : 1;

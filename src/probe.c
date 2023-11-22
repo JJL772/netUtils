@@ -1,4 +1,4 @@
-
+/* Junk! Just probes a list of hosts for a period of time. */
 #include <stdlib.h>
 #include <stdio.h>
 #include <memory.h>
@@ -120,9 +120,11 @@ static void probe_one(struct probe_opts_s* probe_opts, int cur_addr, struct prob
 
     struct timespec start = time_now();
 
+	// Where's The Flippin' Packet Loss?!
 	#define NUM_SAMPLES 10
     const uint8_t patterns[NUM_SAMPLES] = {0xA5, 0xAA, 0xFF, 0x1, 0x10, 0xF0, 0x0F, 0x7F, 0x0, 0x5A};
     const uint32_t sizes[NUM_SAMPLES] = {128, 256, 512, 760, 1024, 2048, 4096, 8192, 16384, 20000};
+	const float intervals[NUM_SAMPLES] = {0.25, 0.1, 0.05, 0.5, 0.25, 0.25, 0.1, 0.5, 0.25, 0.25};
 
     while (1)
     {
@@ -134,20 +136,21 @@ static void probe_one(struct probe_opts_s* probe_opts, int cur_addr, struct prob
 
             const uint32_t size = CLAMP(sizes[i % NUM_SAMPLES], 1, probe_opts->max_size);
             struct ping_opts popts = defpopts;
-            popts.pattern = patterns[i % NUM_SAMPLES];
+            popts.pattern = patterns[rand() % NUM_SAMPLES];
             popts.payload_size = size;
+			popts.interval = intervals[rand() % NUM_SAMPLES];
 
-            printf("------------------------\nPinging %s, size %u, \n", strAddr, size);
+            printf("------------------------\nPinging %s, size %u, pattern 0x%X, interval %f\n", strAddr, size, (int)popts.pattern, popts.interval);
 
             struct ping_stats pstat;
-            if (!icmp_ping(&popts, &pstat)) {
+            if (!icmp_ping(&popts, &pstat) && !pstat.sent) {
                 printf("  Failed.\n");
                 continue;
             }
 
             /* TODO: Merge this pstat with the result */
             printf("  Completed (pattern 0x%X, size %u): %d sent, %d lost, %d corrupted, maxTime %f, minTime %f, avgTime %f\n",
-                (int)patterns[i % NUM_SAMPLES], size, pstat.sent, pstat.lost, pstat.corrupted, pstat.maxTime, pstat.minTime, pstat.avgTime);
+                (int)popts.pattern, size, pstat.sent, pstat.lost, pstat.corrupted, pstat.maxTime, pstat.minTime, pstat.avgTime);
         }
 
         struct timespec now = time_now();

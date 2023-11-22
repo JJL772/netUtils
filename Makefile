@@ -25,7 +25,7 @@ else
 
 ARCH?=$(shell uname -s | tr A-Z a-z)-$(shell uname -m)
 OUT=bin/$(ARCH)
-CPPFLAGS=-DINCLUDE_MAIN=1 -ggdb
+CPPFLAGS=-ggdb
 CFLAGS+=-std=gnu99 $(CPPFLAGS)
 CXXFLAGS:=$(CPPFLAGS) -std=c++0x
 PREFIX?=/usr/local
@@ -35,22 +35,30 @@ ifeq ($(ASAN),YES)
 CPPFLAGS+=-fsanitize=address 
 endif
 
-all: $(OUT)/ping $(OUT)/traceroute $(OUT)/netstats
+all: $(OUT)/ping $(OUT)/traceroute $(OUT)/netstats $(OUT)/probe $(OUT)/wtfpl
 
 bin/$(ARCH):
 	mkdir -p bin/$(ARCH)
 
 $(OUT)/traceroute: src/traceroute.c src/getopt_s.c
 	mkdir -p $(OUT)
-	$(CC) $(CFLAGS) -DTRACEROUTE_UTIL -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) -DTRACEROUTE_MAIN -o $@ $^ $(LDFLAGS)
 
 $(OUT)/ping: src/ping.c src/getopt_s.c
 	mkdir -p $(OUT)
-	$(CC) $(CFLAGS) -DPING_UTIL -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) -DPING_MAIN -o $@ $^ $(LDFLAGS)
 
-$(OUT)/netstats: src/netstats.cc src/getopt_s.c
+$(OUT)/netstats: src/netstats.c src/getopt_s.c
 	mkdir -p $(OUT)
-	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(OUT)/probe: src/probe.c src/ping.c src/traceroute.c src/getopt_s.c
+	mkdir -p $(OUT)
+	$(CC) $(CFLAGS) -DPROBE_MAIN -o $@ $^ $(LDFLAGS)
+
+$(OUT)/wtfpl: src/wtfpl.c src/ping.c src/traceroute.c src/getopt_s.c
+	mkdir -p $(OUT)
+	$(CC) $(CFLAGS) -DWTFPL_MAIN -o $@ $^ $(LDFLAGS)
 
 install:
 	mkdir -p $(PREFIX)/include/netutils

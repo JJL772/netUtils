@@ -31,7 +31,7 @@
 #include "getopt_s.h"
 
 #ifdef __rtems__
-#define ICMP_TIME_EXCEEDED ICMP_TIMXCEED
+#	define ICMP_TIME_EXCEEDED ICMP_TIMXCEED
 #endif
 
 struct traceroute_ctx {
@@ -108,7 +108,7 @@ void traceroute_cmd(int argc, char** argv) {
 
 	struct traceroute_result* result = NULL;
 	traceroute(&opts, &result);
-	traceresult_free(result);
+	traceroute_result_free(result);
 }
 
 static void traceroute_help() {
@@ -121,7 +121,7 @@ void traceroute_opts_init(struct traceroute_opts* opts) {
 	opts->max_hops = 128;
 }
 
-void traceresult_free(struct traceroute_result* result) {
+void traceroute_result_free(struct traceroute_result* result) {
 	if (!result)
 		return;
 
@@ -317,7 +317,7 @@ static void _tr_make_icmp(const struct traceroute_ctx* ctx, struct tr_packet* pa
     packet->icmp_packet.icmp_cksum = ip_cksum(&packet->icmp_packet, sizeof(packet->icmp_packet));
 }
 
-#ifdef INCLUDE_MAIN
+#ifdef TRACEROUTE_MAIN
 int main(int argc, char** argv) {
 	traceroute_cmd(argc, argv);
 }

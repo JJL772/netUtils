@@ -2,9 +2,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <vector>
-#include <unordered_map>
-#include <string>
 #include <string.h>
 #include <sys/stat.h>
 #include <fcntl.h>
