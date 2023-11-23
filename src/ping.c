@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include "iputils.h"
 #include "getopt_s.h"

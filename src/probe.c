@@ -146,7 +146,6 @@ static void _probe_one(struct probe_opts_s* probe_opts, int cur_addr, struct pro
 
     struct timespec start = time_now();
 
-	// Where's The Flippin' Packet Loss?!
 	#define NUM_SAMPLES 10
     const uint8_t patterns[NUM_SAMPLES] = {0xA5, 0xAA, 0xFF, 0x1, 0x10, 0xF0, 0x0F, 0x7F, 0x0, 0x5A};
     const uint32_t sizes[NUM_SAMPLES] = {128, 256, 512, 760, 1024, 2048, 4096, 8192, 16384, 20000};

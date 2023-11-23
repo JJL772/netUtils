@@ -25,8 +25,8 @@ else
 
 ARCH?=$(shell uname -s | tr A-Z a-z)-$(shell uname -m)
 OUT=bin/$(ARCH)
-CPPFLAGS=-ggdb
-CFLAGS+=-std=gnu99 $(CPPFLAGS)
+CPPFLAGS=-ggdb -D_GNU_SOURCE
+CFLAGS+=-std=c99 $(CPPFLAGS)
 CXXFLAGS:=$(CPPFLAGS) -std=c++0x
 PREFIX?=/usr/local
 LDFLAGS+=-lm

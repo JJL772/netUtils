@@ -1,10 +1,15 @@
 
 #pragma once
 
+#include <arpa/inet.h>
 #include <unistd.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <ctype.h>
 #include <time.h>
+#include <string.h>
+#include <stdlib.h>
+#include <netdb.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -53,7 +58,6 @@ static inline char* time_now_str(char* buf, size_t l) {
 }
 
 #define CLAMP(_val, _min, _max) ((_val) < (_min) ? (_min) : ((_val) > (_max) ? (_max) : (_val)))
-
 
 #ifdef __cplusplus
 }
