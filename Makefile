@@ -35,7 +35,7 @@ ifeq ($(ASAN),YES)
 CPPFLAGS+=-fsanitize=address 
 endif
 
-all: $(OUT)/ping $(OUT)/traceroute $(OUT)/netstats $(OUT)/probe $(OUT)/wtfpl
+all: $(OUT)/ping $(OUT)/traceroute $(OUT)/netstats $(OUT)/probe $(OUT)/wtfpl $(OUT)/pcap_test
 
 bin/$(ARCH):
 	mkdir -p bin/$(ARCH)
@@ -59,6 +59,10 @@ $(OUT)/probe: src/probe.c src/ping.c src/traceroute.c src/getopt_s.c
 $(OUT)/wtfpl: src/wtfpl.c src/ping.c src/traceroute.c src/getopt_s.c
 	mkdir -p $(OUT)
 	$(CC) $(CFLAGS) -DWTFPL_MAIN -o $@ $^ $(LDFLAGS)
+
+$(OUT)/pcap_test: test/pcap.c src/pcap.h
+	mkdir -p $(OUT)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 install:
 	mkdir -p $(PREFIX)/include/netutils
