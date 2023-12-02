@@ -42,7 +42,7 @@ static ssize_t _tr_make_ip_frame(struct ip* ipf, uint8_t ttl, size_t datalen) {
 	//ipf->ip_src = ctx->local.sin_addr;
 	ipf->ip_ttl = ttl;
 	ipf->ip_hl = sizeof(*ipf) / 4;
-	ipf->ip_len = datalen + sizeof(*ipf);
+	ipf->ip_len = htons(datalen + sizeof(*ipf));
 	ipf->ip_off = 0;
 	ipf->ip_sum = 0;
 	ipf->ip_sum = ip_cksum(ipf, sizeof(*ipf));
@@ -68,13 +68,16 @@ static void _tr_make_icmp(struct tr_packet* packet) {
 int main() {
     pcap_file_t* pf = pcap_file_create("test.pcap", PCAP_LLT_RAWIP4);
 
-    struct __attribute__((packed)) packet {
-        struct ip ip;
-        struct tr_packet tr;
-    } p = {0};
-    _tr_make_ip_frame(&p.ip, 12, sizeof(p.tr));
-    _tr_make_icmp(&p.tr);
-    
-    pcap_add_packet_now(pf, &p, sizeof(p), sizeof(p));
+	for (int i = 0; i < 30; ++i) {
+    	struct __attribute__((packed)) packet {
+    	    struct ip ip;
+    	    struct tr_packet tr;
+    	} p = {0};
+    	_tr_make_ip_frame(&p.ip, 12, sizeof(p.tr));
+    	_tr_make_icmp(&p.tr);
+	
+    	pcap_add_packet_now(pf, &p, sizeof(p), sizeof(p));
+		usleep(1000);
+	}
     pcap_file_close(pf);
 }

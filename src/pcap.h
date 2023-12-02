@@ -25,6 +25,7 @@ typedef struct pcap_header {
     uint32_t llt;   /* Link-layer type */
 } pcap_header_t;
 
+#define PCPA_LLT_NULL 0U
 #define PCAP_LLT_RAWIP 101U
 #define PCAP_LLT_ETH8023 1U
 #define PCAP_LLT_80211 105U
@@ -33,7 +34,7 @@ typedef struct pcap_header {
 
 typedef struct pcap_packet_header {
     uint32_t tss;       /* Timestamp S */
-    uint32_t tsm;       /* Timestamp uS */
+    uint32_t tsu;       /* Timestamp uS */
     uint32_t caplen;    /* Captured length */
     uint32_t orglen;    /* Original length */
 } pcap_packet_header_t;
@@ -123,7 +124,7 @@ int pcap_add_packet(pcap_file_t* file, pcap_timestamp_t ts, const void* data, in
     pack.caplen = datalen;
     pack.orglen = orglen;
     pack.tss = ts.sec;
-    pack.tsm = ts.nsec / 1e3;
+    pack.tsu = ts.nsec / 1e3;
     if (fwrite(&pack, sizeof(pack), 1, file->fp) != 1)
         return -1;
     if (fwrite(data, datalen, 1, file->fp) != 1)
