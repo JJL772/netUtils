@@ -70,18 +70,18 @@ static void _generate_packet(const struct ping_opts* opts, struct ping_packet* p
 #include <iocsh.h>
 #include <epicsExport.h>
 
-static void ping(const iocshArgBuf* args);
+static void iocsh_ping(const iocshArgBuf* args);
 
 static void register_icmp() {
     static iocshArg arg0 = {"args", iocshArgArgv};
     static const iocshArg* const args[] = {&arg0};
     static iocshFuncDef func = {"ping", 1, args};
-    iocshRegister(&func, ping);
+    iocshRegister(&func, iocsh_ping);
 }
 
 epicsExportRegistrar(register_icmp);
 
-static void ping(const iocshArgBuf* args) {
+static void iocsh_ping(const iocshArgBuf* args) {
 	icmp_ping_cmd(args->aval.ac, args->aval.av);
 }
 
