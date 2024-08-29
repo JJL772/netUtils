@@ -23,6 +23,7 @@ DBD += netUtils.dbd
 netUtils_SRCS += ping.c
 netUtils_SRCS += traceroute.c
 netUtils_SRCS += probe.c
+netUtils_SRCS += getopt_s.c
 #netUtils_SRCS += netstats.cc
 
 INC += ping.h
