@@ -55,6 +55,8 @@ static char sccsid[] = "@(#)getopt.c	8.3 (Berkeley) 4/27/95";
 int
 getopt_s(int nargc, char* const nargv[], const char* ostr, getopt_state_t* state)
 {
+  if (!state->wasinit)
+    getopt_state_init(state);
 	const char *oli;				/* option letter list index */
 	if (!state->place)
 		state->place = EMSG;

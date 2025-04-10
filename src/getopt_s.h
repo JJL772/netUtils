@@ -20,6 +20,7 @@ struct getopt_state {
 		optreset;		/* reset getopt */
 	char	*optarg;	/* argument associated with option */
 	char	*place;
+  int wasinit;
 };
 
 typedef struct getopt_state getopt_state_t;
