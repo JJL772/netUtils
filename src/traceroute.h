@@ -6,32 +6,37 @@
 #include <netinet/in.h>
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #include <stdbool.h>
 
-enum TracerouteLog {
-	TR_LOG_NONE,
-	TR_LOG_FULL,
-	TR_LOG_VERBOSE
+enum TracerouteLog
+{
+  TR_LOG_NONE,
+  TR_LOG_FULL,
+  TR_LOG_VERBOSE
 };
 
-struct traceroute_opts {
-	struct sockaddr_in ip;
-	int max_hops;		/* Max number of hops */
-	int log_type;
+struct traceroute_opts
+{
+  struct sockaddr_in ip;
+  int max_hops; /* Max number of hops */
+  int log_type;
 };
 
-struct traceroute_node {
-	char addr[64];
-	in_addr_t in_addr;
-	struct traceroute_node* next;
+struct traceroute_node
+{
+  char addr[64];
+  in_addr_t in_addr;
+  struct traceroute_node* next;
 };
 
-struct traceroute_result {
-	int hops;
-	struct traceroute_node* first;
+struct traceroute_result
+{
+  int hops;
+  struct traceroute_node* first;
 };
 
 void traceroute_opts_init(struct traceroute_opts* opts);

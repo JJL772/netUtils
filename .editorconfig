@@ -1,0 +1,13 @@
+[*]
+indent_size = 4
+tab_width = 4
+
+[*.{c,h,cpp,cxx,cc}]
+indent_size = 2
+indent_style = space
+tab_width = 2
+end_of_line = lf
+charset = utf-8
+
+[Makefile]
+indent_style = tab
